@@ -1,0 +1,1145 @@
+## Setup
+
+### RStudio and knitr setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load Libraries
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(readxl)
+library(rio)
+library(readr)
+library(dplyr)
+library(plyr)
+library(tidyverse)
+library(Hmisc)
+library(ggplot2)
+library(plotly)
+library(corrplot)
+library(corrgram)
+library(caTools)
+library(class)
+library(ISLR)
+library(MASS)
+library(esquisse)
+library(forecast)
+library(Amelia)
+library(ROCR)
+library(lubridate)
+library(openxlsx)
+library(naniar)
+library(data.table)
+library(ggpubr)
+library(factoextra)
+library(MASS)
+library(ISLR)
+library(tibble)
+library(explore)
+library(RColorBrewer)
+library(corrgram)
+library(mice)
+library(randomForest)
+library(grid)
+library(gridExtra)
+library(coefplot)
+library(caret)
+library(ROCR)
+library(dummies)
+library(MuMIn)
+library(InformationValue)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+```
+
+## Machine Learning with Titanic Data
+
+![](C:/Users/aija115/Desktop/1_ePbfZdw6sz397xLWlFZLCQ.png "Titanic")
+
+Source; <https://www.kaggle.com/c/titanic>
+
+### Overview
+
+The Titanic sank on April 15, 1912. Out of the 2224 passengers and crew, 1502 died due to a lack of lifeboats. Luck played a part in who survived but it seems some groups had a higher rate of survival. Please review the Data Description and answer the questions on the following pages.
+
+### Data Description
+
+The provided data is in two csv's:
+
+• training set (train.csv) • test set (test.csv)
+
+The training set covers the fate of 891 of the 1502 passengers that died. Use the training set to build your model. The features you decide on will predict the fate of the remaining 418 passengers (in the test set).
+
+The test set does not provide the passengers fate but does provide similar information as the training set. Use this set to check your model performance on unseen data. Then make a prediction on whether each passenger survived when the Titanic sunk.
+
+### Data Dictionary
+
++-------------------+---------------------------------------------+------------------------------------------------+
+| Variable          | Definition                                  | Key                                            |
++:==================+:===========================================:+===============================================:+
+| survival          | Survival                                    | 0 = No, 1 = Yes                                |
++-------------------+---------------------------------------------+------------------------------------------------+
+| pclass            | Ticket class                                | 1 = 1st, 2 = 2nd, 3 = 3rd                      |
++-------------------+---------------------------------------------+------------------------------------------------+
+| sex               | Sex                                         |                                                |
++-------------------+---------------------------------------------+------------------------------------------------+
+| Age               | Age in years                                |                                                |
++-------------------+---------------------------------------------+------------------------------------------------+
+| sibsp             | \# of siblings / spouses aboard the Titanic |                                                |
++-------------------+---------------------------------------------+------------------------------------------------+
+| parch             | \# of parents / children aboard the Titanic |                                                |
++-------------------+---------------------------------------------+------------------------------------------------+
+| ticket            | Ticket number                               |                                                |
++-------------------+---------------------------------------------+------------------------------------------------+
+| fare              | Passenger fare                              |                                                |
++-------------------+---------------------------------------------+------------------------------------------------+
+| cabin             | Cabin number                                |                                                |
++-------------------+---------------------------------------------+------------------------------------------------+
+| embarked          | Port of Embarkation                         | C = Cherbourg, Q = Queenstown, S = Southampton |
++-------------------+---------------------------------------------+------------------------------------------------+
+
+### Variable Notes
+
+**pclass**: A proxy for socio-economic status (SES)
+
+-   1st = Upper
+-   2nd = Middle
+-   3rd = Lower
+
+**age**: Age is fractional if less than 1. If the age is estimated, is it in the form of xx.5
+
+**sibsp**: The dataset defines family relations in this way.
+
+**Sibling**: brother, sister, stepbrother, stepsister
+
+**Spouse**: husband, wife (mistresses and fiancés were ignored)
+
+**parch**: The dataset defines family relations in this way.
+
+**Parent**: mother, father
+
+**Child**: daughter, son, stepdaughter, stepson
+
+**parch=0**:Some children travelled only with a nanny
+
+## Questions
+
+### Section 1: Exploratory Data Analysis
+
+Perform the EDA on the data and summarize the main characteristics and explain any important findings. Present your findings in chart form.
+
+**[HINT]** To start the investigation, you could check the missing values, correlations between features and survival result, or the distribution of survival in different feature combinations.
+
+Lets load the data first:
+
+```{r}
+# Primary Source: https://www.kaggle.com/c/titanic
+# Train Data: https://www.kaggle.com/competitions/titanic/data?select=train.csv
+train <- read.csv("C:/Users/aija115/Desktop/train.csv", na.strings = c(""," ","NA"))
+
+# Test Data: https://www.kaggle.com/competitions/titanic/data?select=test.csv
+test <- read.csv("C:/Users/aija115/Desktop/test.csv", na.strings = c(""," ","NA"))
+
+# Lets add the Survived column to test data so they could both have the same amount of columns 
+test$Survived <- NA
+
+# I usually use intersect() when importing data to see how much multiple data have in common with each other; in this case its ZERO! 
+intersect(train,test) # No Intersections - Trust but Verify :) 
+
+# Lets make a primary data frame of train + test:
+titanic_df <- bind_rows(train,test)
+```
+
+Lets check the data structure and variable types, and fix them if necessary:
+
+```{r}
+# Lets see how many unique variables we have here: 
+apply(titanic_df, 2, function(x) length(unique(x))) # I usually use this as my reference point for variables 
+dim(titanic_df) # 1309 observations
+
+str(titanic_df) # hmm, so based on this I would like to change some stuff: 
+
+#  Survived is dropped and SurvivedFac (as categorical outcome) and SurvivedNum (as a continuous range from 0 to 1, indicating probabilities) are created.
+titanic_df <-  titanic_df
+titanic_df$SurvivedFac <- ifelse(titanic_df$Survived=="1","Yes","No")
+titanic_df$SurvivedFac <- factor(titanic_df$Survived, levels=0:1, labels=c("No","Yes"))
+titanic_df$SurvivedNum <- as.numeric(titanic_df$Survived) 
+titanic_df$Survived <- NULL # drop original
+
+# Pclass is dropped and PclassFac (as categorical) and PclassNum (as ordinal) are created. The former is useful for plotting, the latter for machine learning or statistical analysis.
+titanic_df$PclassFac <- ifelse(titanic_df$Pclass==1, "1st Class", ifelse(titanic_df$Pclass==2, "2nd Class", "3rd Class"))
+titanic_df$PclassFac <- factor(titanic_df$PclassFac)
+titanic_df$PclassNum <- as.integer(titanic_df$Pclass)
+titanic_df$Pclass <- NULL
+
+# The variable Sex is usually best represented as a binary indicator for a given gender in machine learning, however, for plotting purposes we keep a categorical representation, creating GenderFac and IsMale wherein Male=1.
+titanic_df$GenderFac <- titanic_df$Sex # factor for plotting
+titanic_df$IsMale <- ifelse(titanic_df$Sex=="male",1,0) # indicator for forecasting stuff (ML)
+titanic_df$Sex <- NULL # drop original
+
+# Lets re-check the data: 
+str(titanic_df) # Nice :) 
+
+# I would usually go straight to handling NAs, spotting outlines, and explore within the data to extract insights and values. 
+# But since this is a test I will try to behave, and answer the questions. 
+
+# so Lets see what we have here: ----
+# 1. Perform the EDA on the data 
+# 2. summarize the main characteristics and explain any important findings. 
+# 3. Present your findings in chart form.
+```
+
+**First Glance at the Tragedy of Rose and Jack!**; Let's try to get an initial insight from data features.
+
+```{r}
+head(titanic_df, n = 10) # Lets look at the first 10 rows
+glimpse(titanic_df) # and a glimpse of the data
+summary(titanic_df) # Also, lets see a summary of the data to see the mins, maxs, means etc. 
+describe(titanic_df) # I usually use describe() to summarize the data as well it shows the number and percentage of the data
+```
+
+*Some Insight*
+
+a.  There are 891 passengers in training dataset, 549 of them died and 342 survived;
+
+b.  The majority of passengers are male (843 obs.), only 466 obs. are female;
+
+c.  Most of passengers were in third class cabins [Pclass = 3] (709 obs.) and embarked in Southampton [Embarked = S] (914 obs.);
+
+d.  The youngest person was 0.17 (I think around 2 months?) years old and the oldest person was 80 years old, and The average passenger was 30 years old.
+
+e.  Maximum number of siblings [SibSp] is 8 and maximum number of children [Parch] is 9;
+
+f.  An average paid ticket was a fare of 33.295 \~ 33.3 pounds. Minimum fare is 0 pounds (very interesting maybe the musicians? :D) and the maximum fare is 512.329 \~ 512.3 pounds.
+
+Lets just check missing data first. I may change stuff and handle them so we could have a wrangled data. I may leave it for later if it was possible. But will answer questions regarding missing values later with details as well.
+
+```{r message=FALSE, warning=FALSE}
+missing.values <- titanic_df %>%
+  gather(key = "key", value = "val") %>%
+  mutate(isna = is.na(val)) %>%
+  group_by(key) %>%
+  mutate(total = n()) %>%
+  group_by(key, total, isna) %>%
+  summarise(num.isna = n()) %>%
+  mutate(percentage = round(num.isna / total * 100, 2))
+# Keys are attributes
+levels <- (missing.values %>% filter(isna == T) %>% arrange(desc(percentage)))$key
+missing.values
+
+# Lets visualize this as well 
+clrcls <- brewer.pal(n = 4, name = "RdBu") # This is one of my favorite color palettes makers :) 
+missing.values %>%
+  ggplot() +
+  geom_bar(aes(x = reorder(key, desc(percentage)), y = percentage, fill = isna), 
+           stat = 'identity', alpha = 0.8) +
+  scale_fill_manual(values = clrcls, labels = c("Not Missing", "Missing")) +
+  coord_flip() +
+  labs(title = "Percentage of missing values in titanic data set",
+       x = 'Variable', y = "% of missing values") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), legend.title = element_blank())
+```
+
+More than 75% passengers don't have **cabin numbers**, so imputing values is inappropriate at this point. Also, I did not handle missing values in **Age** variable in this stage and will leave that for the next questions. **Survived** and **Cabin** were also analyzed later.
+
+However, looking at **Fare** and **Embarked** missing values we can see that there is 1 in fare and 2 in embarked.
+
+```{r}
+titanic_df %>%  filter(if_any(c(Fare, Embarked), is.na))
+```
+
+So, using this source that I found online: <https://www.encyclopedia-titanica.org/titanic-victims/>\
+I found out that I can replace NA with 'S' for: Mrs Stone boarded the Titanic in Southampton on 10 April 1912 and was travelling in first class with her maid "Amelie Icard". Its really interesting how much INFORMATION can be found online!!
+
+```{r}
+titanic_df[which(is.na(titanic_df$Embarked)), 'Embarked'] <- 'S'
+```
+
+So, for **Fare** variable there are lots of things, tools and techniques can be used such as different imputation tools (e.g. mice, Amelie). However, I don't see the point of doing that. So, to replace NA fare value I just simply use median based on passenger class, number of relatives and embarked point.
+
+```{r}
+titanic_df <- titanic_df %>%
+  group_by(PclassFac,PclassNum, SibSp, Parch, Embarked) %>% 
+  mutate(Fare = ifelse(is.na(Fare), median(Fare, na.rm = TRUE), Fare)) %>% 
+  ungroup()
+
+# Now lets check:
+titanic_df %>%  filter(if_any(c(Fare, Embarked), is.na))
+
+#Yup we are all good to go. 
+```
+
+Before any further Explanatory Data Analysis (EDA) lets see the correlation (relationship) of different variables first;
+
+```{r}
+titanic_numeric_cor <- titanic_df
+titanic_numeric_cor <-  titanic_df[,-c(1,2,6,8,9,10,12,14)] #Passenger Id not needed, Override to not include it in our correlation matrix
+titanic_numeric_cor$Parch <- as.numeric(titanic_numeric_cor$Parch)
+titanic_numeric_cor$SibSp <- as.numeric(titanic_numeric_cor$SibSp)
+head(titanic_numeric_cor) # Lets see the numeric elements
+
+# Lets create the correlation matrix
+M = cor(titanic_numeric_cor, use="pairwise.complete.obs")
+corrplot(M, cl.pos="b", tl.pos="d", tl.col = "black", tl.cex=0.85, type="upper", method="color") 
+# OR we can use this:
+corrplot.mixed(M, lower = "number", upper="color", tl.pos = "d", tl.col = "black", tl.cex=0.85) 
+
+# –1. A perfect negative (downward sloping) linear relationship
+# –0.70. A strong negative (downward sloping) linear relationship
+# –0.50. A moderate negative (downhill sloping) relationship
+# –0.30. A weak negative (downhill sloping) linear relationship
+# 0. No linear relationship
+# +0.30. A weak positive (upward sloping) linear relationship
+# +0.50. A moderate positive (upward sloping) linear relationship
+# +0.70. A strong positive (upward sloping) linear relationship
+# +1. A perfect positive (upward sloping) linear relationship
+```
+
+We can conclude that there are strong positive correlations between SibSp and Parch---and that makes sense because children often have siblings, and parents and children often travel together. We can also see that Pclass and Fare are strongly negatively correlated---that makes sense because 1st class tickets are more expensive than lower class tickets, meaning as class goes down (closer to 1) the fare goes up. Finally Age and Pclass are moderately negatively correlated---since richer people are generally older.
+
+Now lets get into EDA. First things first lets visualize passengers distribution by features against survival rates. Then, we could see both distribution and extract some information about the survival as well.
+
+**NOTE** In order to show the visualizations without any NAs and be able to extract useful insights, I have filtered out NAs when producing visualizations for features.
+
+```{r}
+# Survival
+x1 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(x=factor(SurvivedFac), fill=SurvivedFac)) + 
+  geom_bar(colour = "black") + scale_x_discrete(breaks=c("yes","no"),
+        labels=c("Survived", "Died")) +
+  scale_fill_manual(values = clrcls) +
+  labs( y="Number of Passengers", x="Survived", title="Overall Survival"); ggplotly(x1)
+```
+
+*Overall Survival* Overall survival chart shows that most of the passengers did not survived and only 342 passengers were survived. However, while there is a lot of NA data regarding survival and while this chart can give us some insights we should do more analysis on this factor.
+
+```{r}
+# Gender
+x2 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(x=factor(IsMale), fill=SurvivedFac)) + 
+  geom_bar(colour = "black") + scale_x_discrete(breaks=c("0","1"),
+        labels=c("Female", "Male")) + scale_fill_manual(values = clrcls) +
+  labs( y="Number of Passengers", x="Gender", title="Titanic Survival Rate by Gender"); ggplotly(x2)
+```
+
+*Titanic Survival Rate by Gender* Although the majority of the passengers were Male, only 109 Male passengers were survived. However, based on this chart we can see that the majority of survivors were Females. 74% of the women survived, while only 18% of men survived.
+
+```{r}
+# Ticket Class
+x3 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(x=factor(PclassFac), fill=SurvivedFac)) + 
+  geom_bar() + scale_x_discrete(breaks=c("1st Class","2nd Class","3rd Class"),
+        labels=c("1st Class","2nd Class","3rd Class")) + scale_fill_manual(values = clrcls) +
+  labs( y="Number of Passengers", x="Ticket Class", title="Passengers Distribution by Ticket Class"); ggplotly(x3)
+```
+
+*Passengers Distribution by Ticket Class* The majority of the passengers were in the 3rd class tier, where most of the deaths were also in the same tier/class. On the other hand, the majority of the passengers in having the first class tickets survived this disaster. It is very interesting to note that, although the population who were in the 2nd class tier were less than both 1st and 3rd class tiers, they had the majority of casualties.
+
+```{r}
+# Embarked Points
+x4 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(x=factor(Embarked), fill=SurvivedFac)) + 
+  geom_bar() + scale_x_discrete(breaks=c("S","C","Q"),
+        labels=c("Cheerbourg","Queenstown","Southhampton")) + scale_fill_manual(values = clrcls) +
+  labs( y="Number of Passengers", x="Embarked Points", title="Passengers Distribution by Embarked Points"); ggplotly(x4)
+```
+
+*Passengers Distribution by Embarked Points* We can see on this chart that the majority of the passengers were embarked from Cheerbourg, were the majority of the survivors were also from that area.
+
+```{r}
+# siblings
+x5 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(x=factor(SibSp), fill=SurvivedFac)) + 
+  geom_bar() + scale_x_discrete(breaks=c(0,1,2,3,4,5,8),
+        labels=c("0","1","2","3","4","5","8")) + scale_fill_manual(values = clrcls) +
+  labs( y="Number of Passengers", x="Number of Siblings", title="Passengers Distribution by Siblings"); ggplotly(x5)
+```
+
+```{r}
+# Children
+x6 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(x=factor(Parch), fill=SurvivedFac)) + 
+  geom_bar() + scale_x_discrete(breaks=c(0,1,2,3,4,5,6,9),
+        labels=c("0","1","2","3","4","5","6","9")) + scale_fill_manual(values = clrcls) +
+  labs( y="Number of Passengers", x="Number of Parents/Childrens", title="Passengers Distribution by Parents/Children"); ggplotly(x6)
+```
+
+*Passengers Distribution by Siblings and Parents/Children* While the majority of passengers traveled alone, the majority of survivors were also alone or they were with less than 3 people. I can see the logic behind that; if I see a loved one sinking I would stay with them if the chance of escape is not that high. Also, I guess having less people to worried about could make the passengers more agile (?).
+
+```{r}
+x11 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(x=factor(IsMale), fill=SurvivedFac)) +
+           scale_x_discrete(breaks=c("0","1"),
+        labels=c("Female", "Male")) +
+  theme_bw() +
+  geom_bar() + 
+  scale_fill_manual(values = clrcls) +
+  labs( y="Number of Passengers" , x = "Gender", title="Titanic Survival Rate by Gender/Passenger Class")+ 
+  facet_wrap(~PclassFac); ggplotly(x11)
+```
+
+*Titanic Survival Rate by Gender by Passenger Class* 46.4% of females and 58.5% of males traveled as 3rd class passengers. After the striking an iceberg, Captain of the Titanic gave the order to take only women and children to the lifeboats (Movie Reference?). So obviously, they have a better chance of surviving. Specially women in the first and second class. It also shows that men in the first class are almost 3-times more likely to survive than men in the second class.
+
+The graphs above clearly shows that economic status (Pclass) played an important role regarding the potential survival of the Titanic passengers. First class passengers had a much higher chance of survival than passengers in the 3rd class. We note that:
+
+63% of the 1st class passengers survived the Titanic wreck 48% of the 2nd class passenger survived Only 24% of the 3rd class passengers survived
+
+```{r message=FALSE, warning=FALSE}
+titanic_df %>% 
+  filter(!is.na(SurvivedFac)) %>%  
+  ggplot(aes(x= Age, fill = SurvivedFac)) + 
+  theme_bw()+
+  facet_wrap(factor(GenderFac) ~ PclassFac)+
+  geom_density(aplha = 0.5)+
+  labs(y = "Age",x= "Survived", title = "Titanic Survival Rate by Gender/Passenger Class") + 
+  scale_fill_manual(values = clrcls) 
+```
+
+*Titanic Survival Rate by Gender/Passenger Class #2* The same information can be extracted from this plot.
+
+```{r}
+titanic_df %>%
+  filter(!is.na(Age)) %>%
+  ggplot(aes(x = Age)) +
+  geom_histogram(aes(y = ..density..), color = "#FFAE61", fill = "#FFD29F",
+                 alpha = .5, binwidth = 2) +
+  geom_density(alpha = .4, fill = "#F1948A", color = "#FFA48A") +
+  stat_central_tendency(type = "mode",
+                        aes(color = "Mode"),
+                        linetype = "dashed",
+                        size = 1.2,
+                        show.legend = T) +
+  stat_central_tendency(type = "median", 
+                        aes(color = "Median"),
+                        linetype = "dashed",
+                        size = 1.2,
+                        show.legend = T) +
+  stat_central_tendency(type = "mean",
+                        aes(color = "Mean"),
+                        linetype = "dashed",
+                        size = 1.2,
+                        show.legend = T) +
+  scale_color_manual(guide = guide_legend(title = "Central tendency",
+                                          title.hjust = 0.5,
+                                          title.position = "top"),
+                     values = c("#CA0021", "#34496E", "#27AE61")) +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "top")
+```
+
+**Distribution of passengers age** The distribution is positive-skewed and kurtosis is near to zero. Meaning that the majority of the passengers on the ship were young. However, there are lots of missing values in the database that I will work on later and create another distribution.
+
+```{r}
+titanic_df %>%
+  filter(!is.na(Age), !is.na(SurvivedFac)) %>%
+  ggplot(aes(x = SurvivedFac, y = Age, fill = SurvivedFac)) +
+  geom_boxplot(alpha = 0.8,
+               show.legend = F) +
+  stat_summary(geom = "text",
+               fun = quantile,
+               aes(label = sprintf("%1.1f", ..y..)),
+               position = position_nudge(x = 0.45),
+               size = 3) +
+  scale_fill_manual(values = clrcls) +
+  scale_x_discrete(labels = c("perished","survived")) +
+  labs(title = "Age distribution by survival", y = "Passengers age") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_blank())
+```
+
+**Age distribution by survival**It looks like passengers have equal chances to survive regardless of age.
+
+```{r message=FALSE, warning=FALSE}
+xm11 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(x= Age, fill = SurvivedFac))+geom_histogram(binwidth = 5)+labs(y = "Passenger Count",x= "Age", title = "Titanic Age/Survival/Gender Distribution") + facet_wrap(~GenderFac) + scale_fill_manual(values = clrcls); ggplotly(xm11)
+```
+
+*Titanic Age/Survival/Gender Distribution* We can see that men have a higher probability of survival when they are between 18 and 35 years old, and for women, the survival chances are higher between 15 and 40 years old.For men the probability of survival is very low between the ages of 5 and 18, and after 35, but that isn't true for women. Another thing to note is that infants have a higher probability of survival. I also remember from the movie that people kept passing children to people who were trying to get on the little boats!!
+
+```{r message=FALSE, warning=FALSE}
+# The previous info can also be visualized by box-and-whishker;
+xm11 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(x= SurvivedFac,y = Age,fill = SurvivedFac))+ theme_bw()+geom_boxplot()+labs(y = "Age",x= "Survived", title = "Titanic Age/Survival/Gender Distribution #2") + facet_wrap(~GenderFac) + scale_fill_manual(values = clrcls); ggplotly(xm11)
+```
+
+*Titanic Age/Survival/Gender Distribution #2* The same information can be extracted from this plot.
+
+```{r}
+xnnn11<- titanic_df %>% filter(!is.na(SurvivedFac)) %>% 
+  ggplot(aes(x = factor(SibSp), y = factor(Parch), color = SurvivedFac)) +
+  geom_jitter() +
+  scale_color_manual(values = clrcls, labels = c("perished","survived")) +
+  labs(x = "Siblings / spouses", y = "Parents / children", title = "Survival Proportion and Number of Relatives") +
+  theme(legend.position = "top", legend.title = element_blank()); ggplotly(xnnn11)
+```
+
+**Survival Proportion and Number of Relatives** I've noticed this when I made **Passengers Distribution by Parents/Children**; Seems that the larger the family, the lower the chances of survival.
+
+```{r}
+titanic_df %>% filter(!is.na(SurvivedFac)) %>% 
+  mutate(titanic_df[1:891,], hasRelatives = ifelse((SibSp) == "0", TRUE, FALSE)) %>%
+  filter(!is.na(SurvivedFac)) %>% 
+  ggplot(aes(x = factor(hasRelatives), fill = SurvivedFac)) +
+  geom_bar(position = "fill", alpha = .8) +
+  scale_fill_manual(values = clrcls, labels = c("perished","survived")) +
+  scale_x_discrete(labels = c("TRUE" = "NO", "FALSE" = "YES")) +
+  scale_y_continuous(labels = scales::percent) +
+  facet_grid(PclassFac ~ GenderFac,
+             labeller = labeller(Pclass = c("1" = "1st class",
+                                            "2" = "2nd class",
+                                            "3" = "3rd class"))) +
+  labs(title = "Survival Proportion of Passenger with Relatives") +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "top",
+        legend.title = element_blank())
+```
+
+**Survival Proportion if Passenger with Relatives** I believe, per se, the number of relatives on the board does not give proper information of survival. So I decided to add binary attribute whether the passenger has a relatives. For 3rd class women, having relatives (most probably children) decreases survival, but for men the situation is the opposite. For 1st and 2nd class women presence of relatives has no effect on survival.
+
+```{r message=FALSE, warning=FALSE}
+titanic_df %>%
+  group_by(PclassFac) %>% 
+  summarise(Min = min(Fare),
+            "1st Qu." = quantile(Fare, 0.25),
+            Median = median(Fare),
+            Mean = mean(Fare),
+            "3st Qu." = quantile(Fare, 0.75),
+            Max = max(Fare))
+
+ops1 <- titanic_df %>% 
+  ggplot(aes(x = PclassFac, y = Fare)) +
+  geom_boxplot(aes(fill = PclassFac), alpha = 0.8, show.legend = F) +
+  scale_fill_manual(values = clrcls) +
+  scale_x_discrete(labels = c("1" = "1st class",
+                              "2" = "2nd class",
+                              "3" = "3rd class"))
+  ggtitle("Fare distribution by ticket class") +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_blank()); ggplotly(ops1)
+```
+
+Distribution of ticket prices for 2nd and 3rd class is quite similar. At that, second-class tickets are twice as expensive as third-class tickets and three times cheaper than first-class tickets. Also, it can be observed that minimum ticket price is zero. Which is a bit odd, I guess, just someone paid for these passengers. Maybe someone could pay for a 80-day cruise trip for me? hah? maybe?
+
+```{r}
+Deck <- factor(sapply(titanic_df$Cabin, function(x) {
+  ifelse(!is.na(x), trimws(strsplit(x, NULL)[[1]][1]), "U") 
+  })); titanic_df <- add_column(titanic_df, Deck, .after = "Cabin")
+
+bbb1 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>% 
+  ggplot(aes(x = Deck, label = ..count..)) +
+  geom_bar(aes(fill = Deck), show.legend = F) +
+  scale_fill_manual(values = brewer.pal(9, "RdBu")) +
+  labs(title = "Passengers distribution by deck", y = "Number of passengers") + facet_wrap(~SurvivedFac) + 
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_blank(),
+        legend.position = "top",
+        legend.title = element_blank()); ggplotly(bbb1)
+```
+
+**Passengers distribution by deck** The cabin contains important information about passenger's distance from lifeboats. This is quite useful for prediction. Unfortunately, there are too many missing values, so we cannot use it as a predictor. Extracting the first letter from cabin number will tell us about placement of the cabin. For undefined values I'll use U letter. Reportedly, the largest part of passengers occupied cabins on "C" deck. The highest proportion of survivors is observed among passengers from "B", D" and "E" deck. Notable that minimum survival rate is observed among passengers from "A" and "G" deck (except "T" and undefined deck).
+
+```{r message=FALSE, warning=FALSE}
+tt11 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>%
+  ggplot(aes(Fare, fill=PclassFac)) +
+  geom_density(alpha = 0.5) +
+  scale_x_log10() +
+  scale_fill_manual(values = clrcls)+
+  labs(title = "Passengers Class vs Fare", y = "Density", x= "Fare")+
+  facet_wrap(~ SurvivedFac, ncol = 1);ggplotly(tt11)
+```
+
+**Passengers Class vs Fare** There is a broad distribution between the 1st class passenger fares. There’s an interesting bimodality (Bimodality is the simultaneous use of two distinct pitch collections.) in the 2nd class cabins and a long tail in the 3rd class ones. For each class there is strong evidence that the cheaper cabins were worse for survival.
+
+```{r message=FALSE, warning=FALSE}
+tt22 <- titanic_df %>% filter(!is.na(SurvivedFac)) %>%
+  filter(Embarked %in% c("S","C","Q")) %>%
+  ggplot(mapping = aes(Age, Fare, color = SurvivedFac, shape = GenderFac)) +
+  geom_point() +
+  scale_y_log10() +
+  scale_fill_manual(values = clrcls)+
+  labs(title = "Pclass vs Age and multi-dimensional plot", y = "Fare", x= "Age")+
+  facet_grid(PclassFac ~ Embarked);ggplotly(tt22)
+```
+
+
+**Pclass vs Age and multi-dimensional plot** Pclass = 1 passengers seem on average older than those in 3rd (and 2nd) tier/class. Not many children seemed to have traveled 1st class. Most Pclass = 2 children appear to have survived, regardless of Sex. More men than women seem to have traveled 3rd tier, whereas for 1st class the ratio looks comparable. 
+
+
+**SUMMARY:**
+
+```{r include=FALSE}
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  require(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+```{r message=FALSE, warning=FALSE}
+p_age = titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot() +
+  geom_freqpoly(mapping = aes(x = Age, color = SurvivedFac), binwidth = 1) +
+  guides(fill=FALSE) + 
+  scale_fill_manual(values = clrcls) +
+  theme(legend.position = "none")
+p_sex = titanic_df %>% filter(!is.na(SurvivedFac)) %>%  ggplot(mapping = aes(x = GenderFac, fill = SurvivedFac)) +
+  geom_bar(stat='count', position='fill') +
+  labs(x = 'Sex') + scale_fill_manual(values = clrcls)
+p_class = titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(mapping = aes(x = PclassFac, fill = SurvivedFac, colour = SurvivedFac)) +
+  geom_bar(stat='count', position='fill') +
+  labs(x = 'Pclass') + scale_fill_manual(values = clrcls) +
+  theme(legend.position = "none")
+p_emb = titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(Embarked, fill = SurvivedFac)) +
+  geom_bar(stat='count', position='fill') +
+  labs(x = 'Embarked') + scale_fill_manual(values = clrcls) +
+  theme(legend.position = "none")
+p_sib = titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(SibSp, fill = SurvivedFac)) +
+  geom_bar(stat='count', position='fill') +
+  labs(x = 'SibSp') + scale_fill_manual(values = clrcls) +
+  theme(legend.position = "none")
+p_par = titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot(aes(Parch, fill = SurvivedFac)) +
+  geom_bar(stat='count', position='fill') +
+  labs(x = 'Parch') + scale_fill_manual(values = clrcls) + 
+  theme(legend.position = "none")
+p_fare = titanic_df %>% filter(!is.na(SurvivedFac)) %>% ggplot() +
+  geom_freqpoly(mapping = aes(Fare, color = SurvivedFac), binwidth = 0.05) +
+  scale_x_log10() + scale_fill_manual(values = clrcls) +
+  theme(legend.position = "none")
+layout <- matrix(c(1,1,2,3,3,4,5,6,7),3,3,byrow=TRUE)
+multiplot(p_age, p_sex, p_fare, p_class, p_emb, p_sib, p_par, layout=layout)
+```
+
+
+***NOTE*** While in this section I used R codes to do EDA, I truly believe the easier way is to use Tableau or PowerBI to get first impressions from the data. It is much faster and more interactive.
+
+**I made this EDA using Tableau as well** Please visit:
+
+<https://public.tableau.com/app/profile/abtin.ijadi.maghsoodi/viz/TitanicExploratoryDataAnalysis_16500330780830/Dashboard1>
+
+
+### Section 2: Feature Engineering
+
+Follow the below steps to produce the most accurate prediction of survival rates.
+
+You can create any additional features if wanted.
+
+**1. Feature about family**. Some passengers traveled with their family so add a label identifying families. Surnames are a good indicator.
+
+![](C:/Users/aija115/Desktop/8f7ce92266ee4c815fcbafb2480d3471--titanic-survivors-family-history.jpg "List of Survivors")
+
+a.  Grab the Surname
+b.  Find out the family size
+c.  Test if the new features relates well to survival result
+
+```{r}
+# a.  Grab the Surname ------------
+# One of the main variables that seemed very annoying and catches my attention was passenger name because of its format having titles (some odd titles I have to say). Accordingly, we can change that into additional meaningful variables which can feed predictions or be used in the creation of additional new variables. For example, as this question wants "Surnames are a good indicator" for familly representation. 
+
+# Passenger titles extracted from from  names
+titanic_df$PassengerTitle <- gsub('(.*, )|(\\..*)', '', titanic_df$Name) # gsub() function in R Language is used to replace all the matches of a pattern from a string. If the pattern is not found the string will be returned as it is.
+
+# Lets see what we've extracted: 
+table(titanic_df$PassengerTitle)
+
+# Couple of things to note: 
+# "Madame" (Mme) for a woman. The plural is Mesdames (Mmes). "Mademoiselle" (Mlle) is a traditional alternative for an unmarried woman (Ms).
+# so lets change that: 
+titanic_df$PassengerTitle[titanic_df$PassengerTitle == 'Mlle'] <- 'Miss' 
+titanic_df$PassengerTitle[titanic_df$PassengerTitle == 'Ms']<- 'Miss'
+titanic_df$PassengerTitle[titanic_df$PassengerTitle == 'Mme']<- 'Mrs' 
+
+# There are also some strange titles, I dint changed them but: 
+strange_PassengerTitle <- c("Major", "Rev", "Sir", "Jonkheer","Dona","Lady","the Countess","Capt","Col","Don","Dr")
+titanic_df$PassengerTitle[titanic_df$PassengerTitle %in% strange_PassengerTitle]  <- 'Strange Passenger Title'
+
+# Lets see what we've changed: 
+table(titanic_df$PassengerTitle)
+
+# Lets also see that by gender maybe?
+table(titanic_df$PassengerTitle,titanic_df$GenderFac) # Looks good 
+
+# Grab the Surname
+funx1 <- function(x) strsplit(x, split = '[,.]')[[1]][1] # Function to be applied to names using string split
+titanic_df$Surname <- sapply(titanic_df$Name,funx1);table(nlevels(factor(titanic_df$Surname))) 
+
+# Now we have a surname column and 875 unique surnames. 
+
+# b.  Find out the family size ------------
+# For the family size variable wee need number of siblings and parents/children
+# This is considering that no one has more than one spouse :D 
+titanic_df$FamilySize <- titanic_df$SibSp + titanic_df$Parch + 1 # +1 is because some families show they have 0 family size! Adding +1 means we have a minimum of 1 member in each family size
+head(paste(titanic_df$Surname, titanic_df$FamilySize, sep=';'), n=15) # so now we have family sizes 
+
+# c.  Test if the new features relates well to survival result ------------
+# To help us understand more insights lets create an initial plot based on the train data; 
+x124 <- ggplot(titanic_df[1:891,], aes(x = FamilySize, fill = factor(SurvivedFac))) +
+  geom_bar(stat = "count", position = "dodge") + 
+  scale_fill_manual(values = clrcls) +
+  scale_x_continuous(breaks=c(1:11)) +
+  labs(x =" Family Size",y = "Count", title = "Family Size & Survival",fill = "Survived"); ggplotly(x124)
+```
+
+**Family Size and Survival** We can see that families with smaller family size have a better chance of survival and those with family sizes above 4 have lower chance. 
+
+```{r}
+titanic_df$alone <- ifelse((titanic_df$FamilySize == 1),"FOREVER ALONE :(","NOT ALONE")
+titanic_df$largefam <- ifelse((titanic_df$FamilySize != 1),"Large Family","FOREVER ALONE :(")
+
+p1 <- titanic_df[1:891,] %>%
+  mutate(family = as.factor(FamilySize)) %>%
+  ggplot(aes(family, fill = family)) +
+  geom_bar() +
+  labs(x =" Family Size",y = "Count")+
+  theme(legend.position = "none")
+
+p2 <- titanic_df[1:891,] %>%
+  ggplot(aes(alone, fill = SurvivedFac)) +
+  labs(x =" Alone",y = "Count")+
+  geom_bar(position = "fill")
+
+p3 <- titanic_df[1:891,] %>%
+  mutate(family = as.factor(FamilySize)) %>%
+  ggplot(aes(family, fill = SurvivedFac)) +
+  geom_bar(position = "fill") +
+  labs(x =" Family",y = "Count")+
+  theme(legend.position = "none")
+
+p4 <- titanic_df[1:891,] %>%
+  ggplot(aes(largefam, fill = SurvivedFac)) +
+  labs(x =" Large Family",y = "Count")+
+  geom_bar(position = "fill")
+
+layout <- matrix(c(1,1,2,3,3,4),2,3,byrow=TRUE)
+multiplot(p1, p2, p3, p4, layout=layout)
+
+```
+
+This summary plot also validate our previous insights about singles and families. Both being a single traveller or having a large family on board appeared to have had a negative impact on the survival chances. We see that clearly in the two-bar plots on the right hand side of the figure and also in the breakdown of survival percentages per family size. The best survival chances did exist for passengers with 1-3 family members on board.
+
+Lets dig a bit more into this: 
+
+```{r message=FALSE, warning=FALSE}
+# Lets do a survival analysis with a mosaic plot; first we need somedescrete lavels; 
+titanic_df$FamilySizeD[titanic_df$FamilySize == 1] <- "Single Individuals"
+titanic_df$FamilySizeD[titanic_df$FamilySize < 5 & titanic_df$FamilySize > 1] <- "Families Between 2 and 5"
+titanic_df$FamilySizeD[titanic_df$FamilySize > 4] <- "Large Famiies"
+mosaicplot(table(titanic_df$FamilySizeD, titanic_df$SurvivedFac), 
+           main = "Family Size x Survival", 
+           shade=TRUE)
+```
+
+**Family Size x Survival** Based on this plot we can validate the previous plot insights which was a survival penalty among large families. Moreover, in this plot we can also see that there is a survival penalty among single individuals. But as mentioned survival is high among small families. 
+
+
+**2. Feature about cabin**. The first letter in a Cabin number is the deck level of the cabin. You could imagine some decks had a higher survive rate while some didn't.
+
+![](C:/Users/aija115/Desktop/Olympic_&_Titanic_cutaway_diagram.png "Cabins")
+
+a.  Grab the Deck level
+b.  Test if the new feature relates well to survival result
+
+```{r}
+# a.  Grab the Deck level ----
+# "The first letter in a Cabin number is the deck level of the cabin" so we can use the same strsplit command that we used before:
+funx2 <- function(x) strsplit(x, NULL)[[1]][1]
+titanic_df$Decklvl<-factor(sapply(titanic_df$Cabin,funx2))
+# there are lots of NA values in this column though! 
+unique(titanic_df$Decklvl)
+
+# b.  Test if the new feature relates well to survival result ----
+pp1 <- titanic_df[1:891,] %>%
+  filter(Decklvl != "NA") %>%
+  ggplot(aes(Decklvl, fill = PclassFac)) +
+  geom_bar(position = "dodge") +
+  coord_polar() +
+  scale_fill_manual(values = clrcls)+
+  theme(legend.position = "none") +
+  scale_y_log10()
+pp2 <- titanic_df[1:891,] %>%
+  filter(Decklvl != "NA") %>%
+  ggplot(aes(Decklvl, fill = SurvivedFac)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = clrcls)+
+  facet_wrap(~ PclassFac, nrow = 3)
+layout <- matrix(c(1,2),1,2,byrow=TRUE)
+multiplot(pp1, pp2, layout=layout)
+
+```
+
+Decks B & C were the most popular (known though! since there are lots of NA in this data) options for passengers. The right panel gives us the Survived fraction per deck. We can immediately see which decks were associated with the difference passenger classes. 1st-class passengers were present on decks “A”, “B”, and “C”; but absent from the rare decks “F” and “G”. Within the first three decks (A , B , C), “B” had a higher Survived percentage than “C” and especially “A”. Based on the chart (polar chart) on the left once again we can see that the vast majority of passengers with cabin were travelling in 1st class (again based on the known data!).There is overall low survival rate for Pclass = 3. For 2nd-class travelers there is almost no difference in the survival rate for the three decks “D”, “E”, and “F” which are known for them. We can validate these insight also with the following chart: 
+
+```{r message=FALSE, warning=FALSE}
+# Lets do a survival analysis with a mosaic plot;
+mosaicplot(table(titanic_df$Decklvl, titanic_df$SurvivedFac), 
+           main = "Deck Info x Survival")
+```
+
+
+**3. Missing values**. Depending on the volume of missing values, you could either delete the rows entirely or fill in a wise/reasonable number.
+
+a.  Missing values in 'Embarked'. (Passenger ID = 62, 830)
+b.  Missing values in 'Fare'. (Passenger ID = 1044)
+c.  Missing values in Ages. (Up to 263 passengers together didn't have age in Train and Test data sets)
+d.  [Optional] Missing values in Deck. (If you've created the Deck column in step 2, there are many rows you can find don't have a Deck value)
+
+
+```{r}
+# Lets revist this: 
+missing.values <- titanic_df %>%
+  gather(key = "key", value = "val") %>%
+  mutate(isna = is.na(val)) %>%
+  group_by(key) %>%
+  mutate(total = n()) %>%
+  group_by(key, total, isna) %>%
+  summarise(num.isna = n()) %>%
+  mutate(percentage = round(num.isna / total * 100, 2))
+# Keys are attributes
+levels <- (missing.values %>% filter(isna == T) %>% arrange(desc(percentage)))$key
+missing.values
+
+# Lets visualize this as well 
+clrcls <- brewer.pal(n = 4, name = "RdBu") # This is one of my favorite color palettes makers :) 
+missing.values %>%
+  ggplot() +
+  geom_bar(aes(x = reorder(key, desc(percentage)), y = percentage, fill = isna), 
+           stat = 'identity', alpha = 0.8) +
+  scale_fill_manual(values = clrcls, labels = c("Not Missing", "Missing")) +
+  coord_flip() +
+  labs(title = "Percentage of missing values in titanic data set",
+       x = 'Variable', y = "% of missing values") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), legend.title = element_blank())
+
+# We also can define a function to check missing values
+missing_vars <- function(x) {
+  var <- 0
+  missing <- 0
+  missing_prop <- 0
+  for (i in 1:length(names(x))) {
+    var[i] <- names(x)[i]
+    missing[i] <- sum(is.na(x[, i])|x[, i] =="" )
+    missing_prop[i] <- missing[i] / nrow(x)
+  }
+# order   
+missing_data <- data.frame(var = var, missing = missing, missing_prop = missing_prop) %>% 
+arrange(desc(missing_prop))
+# print out
+missing_data
+}
+
+missing_vars(titanic_df)
+```
+
+
+**Abtin NOTES** Survived has 418 missing values that is the test dataset number. Our entire test dataset needs to be filled with that value. 
+Cabin and Age have some significant proportion of missing values, whereas Embarked & Fare only had 2 and 1 missing values, respectively. Since those could be completed using research and a simple arithmetic I did that in the EDA section. Just to revisit: 
+
+
+```{r}
+# a.  Missing values in 'Embarked'. (Passenger ID = 62, 830) ----
+# this was not Zero before: 
+titanic_df %>%  filter(if_any(c(Fare, Embarked), is.na))
+
+# This info is from before:
+
+# So, using this source that I found online: <https://www.encyclopedia-titanica.org/titanic-victims/>\ I found out that I can replace NA with 'S' for: Mrs Stone boarded the Titanic in Southampton on 10 April 1912 and was travelling in first class with her maid Amelie Icard. Its really interesting how much INFORMATION can be found online!!
+
+titanic_df[which(is.na(titanic_df$Embarked)), 'Embarked'] <- 'S'
+
+# b.  Missing values in 'Fare'. (Passenger ID = 1044) ----
+# So, for **Fare** variable there are lots of things, tools and techniques can be used such as different imputation tools (e.g. mice, Amelie). However, I don't see the point of doing that. So, to replace NA fare value I just simply use median based on passenger class, number of relatives and embarked point.
+
+titanic_df <- titanic_df %>%
+  group_by(PclassFac,PclassNum, SibSp, Parch, Embarked) %>% 
+  mutate(Fare = ifelse(is.na(Fare), median(Fare, na.rm = TRUE), Fare)) %>% 
+  ungroup()
+
+# Now lets check:
+titanic_df %>%  filter(if_any(c(Fare, Embarked), is.na))
+
+#Yup we are all good to go. 
+```
+
+
+**Missing Values in Age Variable** There are lots and lots of methods out there that can be used from taking mean values to replace the missing value to using a model to predict values based on the existing values and data imputation tools and techniques. Just to show an example for this section I used Multivariate Imputation by Chained Equations; https://cran.r-project.org/web/packages/mice/mice.pdf I used Random Forest method for this imputation. 
+
+
+```{r message=FALSE, warning=FALSE}
+# c.  Missing values in Ages. (Up to 263 passengers together didn't have age in Train and Test data sets) ----
+# Make variables factors into factors
+factor_vars <- c('PassengerId','PclassFac','GenderFac','Embarked',
+                 'PassengerTitle','Surname','FamilySize','FamilySizeD')
+titanic_df[factor_vars] <- lapply(titanic_df[factor_vars], function(x) as.factor(x))
+
+# Set a random seed so we could reproduce the output 
+set.seed(129)
+# MICE imputation, excluding certain (less useful) variables:
+mice_impute <- mice(titanic_df[, !names(titanic_df) %in% c('PassengerId','Name','Ticket','Cabin','FamilySize','Surname','SurvivedFac')], method='rf') # I decided to use Random Forest method because, it can handle both continuous and categorical variables.
+
+
+#### This imputation also did impute and populate Cabin and Survived but I don't like to use to use this as main tool of calculations. ####
+
+
+# So lets see the output based on the imputed data:
+mice_output <- complete(mice_impute) # seems ok :\ 
+
+# But lets compare that to the main dataset:
+par(mfrow=c(1,2))
+hist(titanic_df$Age, 
+     freq=F, 
+     main='Age: Original Data', 
+     col='#8933dd', 
+     ylim=c(0,0.04),
+     ylab="Density", xlab="Age") # colour is from from https://www.color-hex.com/color-palette/1011436
+hist(mice_output$Age, 
+     freq=F, 
+     main='Age: MICE Output', 
+     col='#45bbff', 
+     ylim=c(0,0.04),
+     ylab="Density", xlab="Age") # colour is from from https://www.color-hex.com/color-palette/1011432
+
+# Things look good, so let’s replace our age vector in the original data with the output from the mice model.
+
+# Replace Age from the mice model.
+titanic_df$Age <- mice_output$Age
+
+# Show new number of missing Age values
+sum(is.na(titanic_df$Age))
+
+# Yup we are all set :) 
+```
+
+
+**To Impute Stuff for Deck and Cabin** we can do that by multiple approaches for example we can use simple (hmm!) reasoning to deal with missing data. In this case, people with the same tickets are likely to occupy the same cabin. We can impute data using other tools and techniques as well. 
+
+*I took a step further and impute missing values in Deck, Cabin Number and ultimately our original Cabin column :)*
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, results = "hide"}
+# d. Missing values in Deck. (If you've created the Deck column in step 2, there are many rows you can find don't have a Deck value) ----
+#Extract Cabin Num from Cabin. This part origins from Ref 1.
+titanic_df$CabinNum <- sapply(titanic_df$Cabin,function(x) strsplit(x,'[A-Z]')[[1]][2])
+titanic_df$CabinNum <- as.numeric(titanic_df$CabinNum)
+
+# Calculating the number of missing value in CabinNum before imputation
+sum(is.na(titanic_df$CabinNum)) # we have 1027 
+
+# Now I want to show another imputation this time by a simple logistic regression.
+
+set.seed(123)
+mice_impute2 <- mice(titanic_df[, !names(titanic_df) %in% c('PassengerId','Name','Ticket','Cabin','FamilySize','Surname','SurvivedFac')]) # this may take a bit of time. 
+
+# Lets fit it with a logistic regression
+fit <- with(mice_impute2, glm(SurvivedNum ~ PclassFac + Fare + Parch + SibSp + Embarked + GenderFac + Age + CabinNum, family = binomial(link = "logit")))
+pooled <- pool(fit)
+summary(pooled) # not bad! 
+
+# Lets see the predictor matrix
+mice_impute2$predictorMatrix
+
+# In Predictor Matrix, the rows represent the variables being imputed, the columns represent the variables used for the imputation, and 1’s/0’s indicate used/not used).The actual imputations can be observed in the object imp. Lets do that for Cabin: 
+mice_impute2$imp$CabinNum
+
+# ok lets put that in a dataframe and then put it in our own data: 
+mice_output2 <- complete(mice_impute2)
+
+# Like this
+titanic_df$CabinNum <- mice_output2$CabinNum
+
+# now lets see deck; 
+unique(titanic_df$Decklvl)
+titanic_df$Decklvl <- as.integer(titanic_df$Decklvl)
+
+# Calculating the number of missing value in Decklevel before imputation
+sum(is.na(titanic_df$Decklvl)) # we have 1014
+set.seed(123)
+mice_impute3 <- mice(titanic_df[, !names(titanic_df) %in% c('PassengerId','Name','Deck','Ticket','Cabin','FamilySize','Surname','SurvivedFac')])
+fit <- with(mice_impute3, glm(SurvivedNum ~ PclassFac + Fare + Parch + SibSp + Embarked + GenderFac + Age + CabinNum + Decklvl, family = binomial(link = "logit")))
+pooled <- pool(fit)
+summary(pooled) # not bad! 
+mice_impute3$predictorMatrix
+mice_impute3$imp$Decklvl
+mice_output3 <- complete(mice_impute3)
+# Lets put it in our data:
+titanic_df$Decklvl <- mice_output3$Decklvl
+unique(titanic_df$Decklvl)
+
+# Lets fill the Deck
+titanic_df$Deck<- as.character(gsub(1, "A", 
+                  gsub(2, "B",
+                       gsub(3, "C",
+                            gsub(4, "D",
+                                 gsub(5, "E",
+                                      gsub(6, "F",
+                                           gsub(7, "G",
+                                                gsub(8,"H",titanic_df$Decklvl)))))))))
+
+```
+
+```{r}
+# Now lets merge deck level and number to complete our Cabin column 
+titanic_df$Cabin<- paste(titanic_df$Deck, titanic_df$CabinNum, sep='')
+
+# here we go now I have imputed Cain number and Deck and merged everything to populate Cabin Column
+head(titanic_df, n=20)
+```
+
+
+### Section 3: Prediction
+
+**1.** Create the first model using logistic regression and explain how you conduct the model selection.
+
+```{r}
+# Split the data back into a train set and a test set
+train <- titanic_df[1:891,];test <- titanic_df[892:1309,]
+# Lets drop the columns that we know that we are not going to use: 
+# [1]PassengerId, [2]Name, [6]Ticket, [8]Cabin, [9]Deck, [17]PassengerTitle, [18]Surname, [19] FamilySize, [20]alone, [21]largefam, [22] familysizeD, [23] decklvl, [24]CabinNum
+train <- train[,-c(1,2,6,8,9,17,18:24)]
+test <- test[,-c(1,2,6,8,9,17,18:24)]
+#also lets just keep the numeric values and remove: [6]SurvivedFac, [8]PclassFac and [10] GenderFac
+train <- train[,-c(6,8,10)]
+test <- test[,-c(6,8,10)]
+# Lets see how we can decode Embarked in regression (will use this to interpret the coefficients)
+levels(factor(train$Embarked))
+contrasts(factor(train$Embarked))
+
+# Build an initial model will all the variables; first model how does survival compare to all variables
+titaniclogmodel1 = glm(SurvivedNum~., 
+                  data = train, 
+                  family = binomial(link='logit'))
+## Model Summary
+summary(titaniclogmodel1) # We can see almost all of the variables have negative coefficient effect meaning that as the numeric value increases the survival will go down; age increase = lower survival, more siblings = lower survival, passenger class 3 lower survival than passenger class 1. We saw these in the initial analysis as well. Also, if the gender is male (0 to 1) lower survival rate. 
+confint(titaniclogmodel1) # confidence intervals for coefficient 
+
+## Using anova() to analyze the table of deviance
+anova(titaniclogmodel1, test="Chisq")
+plot(titaniclogmodel1)
+
+# So before going any further and do any predictions lets try to find the best model 
+
+# there are multiple ways that we can do that; 
+
+# 1) Stepwise regression with both forward and backward directions; 
+stepmodel = step(titaniclogmodel1, direction="both")
+formula(stepmodel);summary(stepmodel) # This is the best model based on Stepwise Regression
+
+# However, there are a huge amount of research that shows that is not the best way to select a model. While in many real world situations data scientist use that, it is not the best model that is why Kamil Barton developed https://cran.r-project.org/web/packages/MuMIn/MuMIn.pdf 
+# I tend to use dredge() in my usual research for best selection model: 
+options(na.action = "na.fail")
+all.fits <- dredge(titaniclogmodel1)
+head(all.fits)
+best.model <- get.models(all.fits, 1)[[1]]
+summary(best.model) # summary of the best model 
+windows(20,15)
+plot(all.fits,col="blue") 
+
+# So now we have to select between:
+summary(best.model)
+# and
+summary(stepmodel)
+
+# I use both AIC and BIC for that: 
+AIC(best.model,stepmodel)
+BIC(best.model,stepmodel)
+
+# They are LITERALLY the same! now we selected the best model and validated that based on another method. 
+
+# EXTRA WORK NOT SURE IF NEEDED! ----
+# Lets do the prediction and check the that as well 
+train$score1 <- predict(best.model, newdata = train, type="response")
+train$score2 <- predict(stepmodel, newdata = train, type="response")
+train$prediction1 <- ifelse(train$score1>=0.5, 1, 0)
+train$prediction2 <- ifelse(train$score2>=0.5, 1, 0)
+# Again the confusion matrix is the same its not that bad :\ its not really that satisfying but not that bad 
+table(factor(train$prediction1), factor(train$SurvivedNum))
+table(factor(train$prediction2), factor(train$SurvivedNum))
+# Based on this accuracy is (TP+TN)/(TP+TN+FP+FN)= 0.8513674
+(470+246)/(470+197+132+42)
+# So its 85% which is ok. 
+# Now, let’s check the ROC and AUC curves of the model.
+plotROC(actuals=train$SurvivedNum, predictedScores=as.numeric(fitted(stepmodel)))
+plotROC(actuals=train$SurvivedNum, predictedScores=as.numeric(fitted(best.model)))
+# Cool, lets now predict based on test data and populate the survived column for test data:
+test$score2 <- predict(stepmodel, newdata = test, type="response")
+test$SurvivedNum <- ifelse(test$score2>=0.5, 1, 0)
+```
+
+
+**1) Interpreting Results from Logistic Regression** Since I'm not sure if you want this interpretation or not, I will try to be as brief as possible. We can see almost all of the variables have negative coefficient effect meaning that as the numeric value increases the survival will go down; age increase = lower survival, more siblings = lower survival, passenger class 3 lower survival than passenger class 1. We saw these in the initial analysis as well. Also, if the gender is male (0 to 1) lower survival rate. This validates the insights from EDA. 
+
+
+**2) Explanation on Best Model Selection** Usually there are various tools and techniques to select the best model from using a specific measure such as AIC (Akaike Information Criterion) and BIC (Bayesian Information Criterion) to tweaking the model by our self to see the changes within coefficients. My favorite methods when selecting the best regression model is Step-wise regression (which is based on AIC) and Dregde which is a shrinkage function and ranking method for regression models based on multiple criteria including AIC, BIC, AICc and BICc. I use both Step-wise regression and Dregde to validate both results and select the best model based on multiple criteria instead of just one method. I've tried to approach this question with the most simple and straightforward approach possible. However, there are lots of other methods that can be used to select the best model such as hyperbolic models, Lasso and Ridge Models, Bayesian Inference, Markov Chains etc. I did the same approach that I usually teach student to use as a practical and straightforward approach with less complications. 
+
+
+**2.** Create the second model under any other Machine Learning techniques you wish (Decision Tree, Random Forest, XGBoost, etc.)
+
+```{r}
+# Method #1; Decision Tree ----
+# Lets fit the model to a Decision Tree; 
+decision_fit <- rpart(SurvivedNum ~ PclassNum + IsMale + SibSp + Parch + Age + Fare + Embarked,
+             data = train,
+             method = "class")
+# Lets create the plot for it; 
+fancyRpartPlot(decision_fit)
+# Lets predict via Train data: 
+train$predictdecisiontree <- predict(decision_fit, train, type = "class")
+# Lets check the accuracy
+table(factor(train$predictdecisiontree), factor(train$SurvivedNum))
+(500+243)/(500+243+99+49) 
+# 0.8338945 which is 83% which is 2% less than previous model 
+# Lets predict and populate test data 
+test$predictdecisiontree <- predict(decision_fit, test, type = "class")
+
+# Lets play with hyperparameters and control
+decision_fit2 <- rpart(SurvivedNum ~ PclassNum + IsMale + SibSp + Parch + Age + Fare + Embarked,
+               data=train,
+               method="class", 
+               control=rpart.control(minsplit=2, cp=0)) # cp parameter, this is the metric that stops splits that aren’t deemed important enough. minsplit  governs how many passengers must sit in a bucket before even looking for a split.
+
+fancyRpartPlot(decision_fit2) # this doesnt make sense but its ok :) 
+
+train$predictdecisiontree1 <- predict(decision_fit2, train, type = "class")
+
+# Lets check the accuracy
+table(factor(train$predictdecisiontree1), factor(train$SurvivedNum))
+(543+331)/(543+331+11+6) 
+# 0.9809203 which means accuracy of 98% which is very good!! 
+
+# Perfect!! lets now populate the test data; 
+test$predictdecisiontreeoptimal <- predict(decision_fit2, test, type = "class")
+
+```
+
+**3.** Report if any improvements from the second model.
+
+Comparing the accuracy of the extracted models we can see that while in the very primary logistic regression with the best model from stepwise regression was ~85%, accuracy of the initial decision tree model was ~82%. However, by enabling the recursive partitioning and increasing complexity by using cross validation the accuracy of the decision tree (second model) was increased to 98%. 
+
+.
+
